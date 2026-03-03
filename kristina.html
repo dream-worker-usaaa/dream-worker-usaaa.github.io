@@ -13,22 +13,48 @@
             justify-content: center;  /* центрируем по горизонтали */
             align-items: center;      /* центрируем по вертикали */
             background-color: #f0f0f0; /* легкий фон для наглядности */
-            background-position: 47% 50%;
-            background-image:url('Gemini_Generated_Image_x0rs0kx0rs0kx0rs.png');
+            background-position: center 0;
+            background-image:url('https://dream-worker-usaaa.github.io/Gemini_Generated_Image_x0rs0kx0rs0kx0rs.png');
         }
 
-        iframe {
-            width: 563px;
-            height: 413px;
-            position: absolute;
-            top: 61px;
-            border: 2px solid #ccc;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+		::-webkit-scrollbar {
+		  width: 12px; /* Control the width/height */
+		}
+
+
+		::-webkit-scrollbar-track {
+		  background: #000000; 
+		  border-radius: 10px; /* Optional: adds rounded corners */
+		}
+
+		::-webkit-scrollbar-thumb {
+		  background: #666666; 
+		  border-radius: 10px; /* Optional: adds rounded corners */
+		}
+
+
+		::-webkit-scrollbar-thumb:hover {
+		  background: #e55337;
+		}
+		iframe{
+			width: 1025px;
+			height:3000px;
+		}
+		.wrapper{
+			width: 1025px;
+			height: 756px;
+			position: absolute;
+			top: 86px;
+			border: 2px solid #000;
+			border-radius: 8px;
+			overflow-y: scroll;
+			overflow-x: hidden;
         }
     </style>
 </head>
 <body>
-    <iframe src="https://agentsofanomalies.framer.website/" title="Пример iframe"></iframe>
+<div class="wrapper">
+  <iframe  style="border: none;" src="https://agentsofanomalies.framer.website/" width="417" crolling="no"></iframe>
+</div>
 </body>
 </html>
