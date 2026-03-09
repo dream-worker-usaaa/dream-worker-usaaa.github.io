@@ -5,56 +5,73 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Iframe по центру</title>
     <style>
-        /* Убираем отступы body и растягиваем на всю высоту окна */
+        /* === ЭТО CSS (ЗДЕСЬ НАСТРАИВАЕМ ВНЕШНИЙ ВИД) === */
+        
+        /* Убираем отступы и центрируем контент по середине экрана */
         body {
             margin: 0;
             height: 100vh;
             display: flex;
-            justify-content: center;  /* центрируем по горизонтали */
-            align-items: center;      /* центрируем по вертикали */
-            background-color: #f0f0f0; /* легкий фон для наглядности */
-            background-position: center 0;
-            background-image:url('https://dream-worker-usaaa.github.io/back video.mp4');
+            justify-content: center; /* Центр по горизонтали */
+            align-items: center;     /* Центр по вертикали */
+            overflow: hidden;        /* Убираем лишнюю прокрутку у самой страницы */
         }
 
-		::-webkit-scrollbar {
-		  width: 12px; /* Control the width/height */
-		}
+        /* Стили для фонового видео */
+        .bg-video {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            object-fit: cover; /* Видео заполнит весь экран */
+            z-index: -1;       /* Прячем видео на самый задний план */
+        }
 
+        /* Настройка ползунка (скроллбара) */
+        ::-webkit-scrollbar {
+            width: 12px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #000000; 
+            border-radius: 1px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #000000; 
+            border-radius: 1px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #000000;
+        }
 
-		::-webkit-scrollbar-track {
-		  background: #000000; 
-		  border-radius: 1px; /* Optional: adds rounded corners */
-		}
+        /* Окно, в котором будет лежать ваш сайт */
+        .wrapper {
+            width: 1025px;
+            height: 756px;
+            border: 1px solid #000;
+            border-radius: 8px;
+            overflow-y: scroll;
+            overflow-x: hidden;
+            z-index: 1; /* Окно будет поверх видео */
+            background-color: #fff; /* Белый фон, чтобы видео не просвечивало сквозь сайт, если он прозрачный */
+        }
 
-		::-webkit-scrollbar-thumb {
-		  background: #000000; 
-		  border-radius: 1px; /* Optional: adds rounded corners */
-		}
-
-
-		::-webkit-scrollbar-thumb:hover {
-		  background: #000000;
-		}
-		iframe{
-			width: 1025px;
-			height: 756px;
-		}
-		.wrapper{
-			width: 1025px;
-			height: 756px;
-			position: absolute;
-			top: 86px;
-			border: 1px solid #000;
-			border-radius: 8px;
-			overflow-y: scroll;
-			overflow-x: hidden;
+        /* Сам встраиваемый сайт (iframe) */
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
         }
     </style>
 </head>
 <body>
-<div class="wrapper">
-  <iframe  style="border: none;" src="https://agentsofanomalies.framer.website/" width="417" crolling="no"></iframe>
-</div>
+    <video autoplay loop muted playsinline class="bg-video">
+        <source src="back_video.mp4" type="video/mp4">
+    </video>
+
+    <div class="wrapper">
+        <iframe src="https://agentsofanomalies.framer.website/" scrolling="no"></iframe>
+    </div>
+
 </body>
 </html>
