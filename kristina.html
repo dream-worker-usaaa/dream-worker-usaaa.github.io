@@ -5,67 +5,51 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Агенты Аномалий</title>
    <style>
-        /* === ЭТО CSS (ЗДЕСЬ НАСТРАИВАЕМ ВНЕШНИЙ ВИД) === */
-        
-        /* Убираем отступы и центрируем контент по середине экрана */
+        /* === ОСНОВНЫЕ СТИЛИ СТРАНИЦЫ === */
         body {
             margin: 0;
+            padding: 0;
             height: 100vh;
             display: flex;
-            justify-content: center; /* Центр по горизонтали */
-            align-items: center;     /* Центр по вертикали */
-            overflow: hidden;        /* Убираем лишнюю прокрутку у самой страницы */
-            background-color: #000;  /* Чёрный фон, пока грузится видео */
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            background-color: #000;
         }
 
-        /* Стили для фонового видео */
+        /* Фоновое видео */
         .bg-video {
             position: fixed;
             top: 0;
             left: 0;
             width: 100vw;
             height: 100vh;
-            object-fit: cover; /* Видео заполнит весь экран */
-            z-index: -1;       /* Прячем видео на самый задний план */
+            object-fit: cover;
+            z-index: -1;
         }
 
-        /* Настройка ползунка (скроллбара) внутри iframe */
-        ::-webkit-scrollbar {
-            width: 4px; /* Чуть тоньше для аккуратности */
-        }
-        ::-webkit-scrollbar-track {
-            background: rgba(0, 0, 0, 0.5); /* Полупрозрачный трек */
-            border-radius: 4px;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: #0f0; /* Ярко-зелёный скролл под стиль интерфейса */
-            border-radius: 4px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #0f0;
-        }
-
-        /* Окно монитора, в котором лежит сайт */
+        /* === ОКНО МОНИТОРА === */
         .wrapper {
-            position: relative;  /* Обязательно для наложения эффектов */
-            width: 1100px;        /* Подкручено под монитор */
-            height: 780px;       /* Подкручено под монитор */
+            position: relative;
+            /* Размеры области внутри физического монитора на видео */
+            width: 1100px; 
+            height: 780px; 
             border: none;
-            border-radius: 32px;  /* Легкое закругление */
-            overflow: hidden;    /* Скрываем всё, что вылезает */
+            border-radius: 40px; /* Слегка увеличил скругление под ЭЛТ-монитор */
+            overflow: hidden;
             z-index: 1;
-            background-color: #000; 
+            background-color: #000;
             
-            /* Твои параметры позиционирования */
-            margin-top: -690px; 
-            margin-left: -90px;   
+            /* ПОЗИЦИОНИРОВАНИЕ НА СТОЛЕ */
+            /* Эти параметры выравнивают "стекло" ровно по рамке монитора из видео */
+            margin-top: -50px; 
+            margin-left: 0px;   
             transform: scale(1.1); 
             
-            /* Эффект свечения самого экрана monitora */
-            box-shadow: 0 0 20px rgba(0, 255, 0, 0.2); 
+            box-shadow: 0 0 40px rgba(0, 255, 0, 0.15); 
         }
 
-        /* === ЭФФЕКТ СТАРЫХ ТВ ПОЛОС (ОВЕРЛЕЙ) === */
+        /* ЭФФЕКТ СТАРЫХ ТВ ПОЛОС (ПОВЕРХ САЙТА) */
         .wrapper::after {
             content: "";
             position: absolute;
@@ -73,39 +57,50 @@
             left: 0;
             width: 100%;
             height: 100%;
-            
-            /* 1. Создаем горизонтальные полоски (Scanlines) с помощью градиента */
             background: repeating-linear-gradient(
                 0deg,
-                rgba(0, 0, 0, 0.15), /* Цвет полоски (черный, очень прозрачный) */
-                rgba(0, 0, 0, 0.15) 1px, /* Толщина полоски */
-                transparent 1px, /* Прозрачный промежуток */
-                transparent 2px  /* Ширина промежутка */
+                rgba(0, 0, 0, 0.1),
+                rgba(0, 0, 0, 0.1) 1px,
+                transparent 1px,
+                transparent 2px
             );
-            
-            /* 2. Добавляем виньетку (затемнение по углам для объема) */
-            box-shadow: inset 0 0 80px rgba(0, 0, 0, 0.6);
-            
-            /* 3. ОЧЕНЬ ВАЖНО: Мышь игнорирует этот слой, клики проходят сквозь него */
+            box-shadow: inset 0 0 100px rgba(0, 0, 0, 0.7);
             pointer-events: none; 
-            
-            z-index: 2; /* Слой лежит поверх iframe */
-            border-radius: inherit; /* Наследует закругление углов */
+            z-index: 10;
+            border-radius: inherit;
         }
 
-        /* Сам встраиваемый сайт (iframe) */
+        /* === ВСТРАИВАЕМЫЙ САЙТ (IFRAME) === */
         iframe {
-            width: 100%;
-            height: 100%;
+            /* ЭМУЛЯЦИЯ МАСШТАБА 50% */
+            /* Мы делаем окно сайта в 2 раза шире/выше и сжимаем его scale(0.5) */
+            /* Это заставляет Framer думать, что он на огромном 4K мониторе */
+            width: 200%; 
+            height: 200%; 
             border: none;
-            z-index: 1; /* Лежит под эффектом полос */
+            
+            transform: scale(0.5);
+            transform-origin: top left; /* Важно, чтобы масштаб не уехал в центр */
+            
+            z-index: 1;
+        }
+
+        /* Кастомный скроллбар для внутренних элементов */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.8);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #0f0;
+            border-radius: 10px;
         }
     </style>
 </head>
 <body>
     <video autoplay loop muted playsinline class="bg-video">
-       <source src="https://dream-worker-usaaa.github.io/back-video1.mp4" 
-           type="video/mp4">
+       <source src="https://dream-worker-usaaa.github.io/back-video1.mp4" type="video/mp4">
     </video>
 
     <div class="wrapper">
