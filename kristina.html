@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Агенты Аномалий</title>
    <style>
-        /* === ОСНОВНЫЕ СТИЛИ СТРАНИЦЫ === */
         body {
             margin: 0;
             padding: 0;
@@ -13,11 +12,10 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            overflow: hidden;
             background-color: #000;
+            overflow: hidden;
         }
 
-        /* Фоновое видео */
         .bg-video {
             position: fixed;
             top: 0;
@@ -28,28 +26,26 @@
             z-index: -1;
         }
 
-        /* === ОКНО МОНИТОРА === */
+        /* КОНТЕЙНЕР-МОНИТОР */
         .wrapper {
             position: relative;
-            /* Размеры области внутри физического монитора на видео */
-            width: 1100px; 
-            height: 780px; 
-            border: none;
-            border-radius: 40px; /* Скругление под ЭЛТ-монитор */
+            /* Мы жестко ставим 1025px — ту ширину, где у тебя всё ИДЕАЛЬНО во Фреймере */
+            width: 1025px; 
+            height: 760px; 
+            
+            /* Твои старые координаты под монитор на видео */
+            margin-top: -690px; 
+            margin-left: -90px;
+            transform: scale(1.1); 
+
+            border-radius: 35px;
             overflow: hidden;
-            z-index: 1;
             background-color: #000;
-            
-            /* ПОЗИЦИОНИРОВАНИЕ НА СТОЛЕ */
-            /* Эти параметры выравнивают "стекло" ровно по рамке монитора из видео */
-            margin-top: -690px; /* Вернул твой старый, проверенный отступ */
-            margin-left: -90px;  /* Вернул твой старый, проверенный отступ */
-            transform: scale(1.1); /* Твой старый масштаб самого окна */
-            
-            box-shadow: 0 0 40px rgba(0, 255, 0, 0.15); 
+            box-shadow: 0 0 30px rgba(0, 255, 0, 0.1);
+            z-index: 1;
         }
 
-        /* ЭФФЕКТ СТАРЫХ ТВ ПОЛОС (ПОВЕРХ САЙТА) */
+        /* СКАНИРУЮЩИЕ ЛИНИИ */
         .wrapper::after {
             content: "";
             position: absolute;
@@ -57,46 +53,17 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: repeating-linear-gradient(
-                0deg,
-                rgba(0, 0, 0, 0.1),
-                rgba(0, 0, 0, 0.1) 1px,
-                transparent 1px,
-                transparent 2px
-            );
-            box-shadow: inset 0 0 100px rgba(0, 0, 0, 0.7);
-            pointer-events: none; 
-            z-index: 10;
-            border-radius: inherit;
+            background: repeating-linear-gradient(0deg, rgba(0,0,0,0.1) 0px, rgba(0,0,0,0.1) 1px, transparent 1px, transparent 2px);
+            pointer-events: none;
+            z-index: 5;
         }
 
-        /* === ВСТРАИВАЕМЫЙ САЙТ (IFRAME) === */
         iframe {
-            /* Физический размер iframe теперь всегда равен размеру .wrapper */
-            width: 100%; 
-            height: 100%; 
+            width: 100%;
+            height: 100%;
             border: none;
-            
-            /* МАГИЯ МАСШТАБА 50% ВНУТРИ ОКНА */
-            /* zoom заставляет браузер думать, что этот iframe — очень маленький экран */
-            /* Контент сжимается, текст становится мелким, как тебе нравится */
-            -moz-transform: scale(0.5); /* Для Firefox */
-            -moz-transform-origin: 0 0;
-            zoom: 0.5; /* Для Chrome, Edge, Safari */
-            
-            z-index: 1;
-        }
-
-        /* Кастомный скроллбар */
-        ::-webkit-scrollbar {
-            width: 6px;
-        }
-        ::-webkit-scrollbar-track {
-            background: rgba(0, 0, 0, 0.8);
-        }
-        ::-webkit-scrollbar-thumb {
-            background: #0f0;
-            border-radius: 10px;
+            /* Убираем скролл самого браузера, чтобы работал только скролл Фреймера */
+            overflow: hidden; 
         }
     </style>
 </head>
@@ -108,6 +75,5 @@
     <div class="wrapper">
         <iframe src="https://agentsofanomalies.framer.website/" scrolling="yes"></iframe>
     </div>
-
 </body>
 </html>
