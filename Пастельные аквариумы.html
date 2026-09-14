@@ -1,0 +1,1369 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Процедурные аквариумы</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #050510; }
+  canvas { display: block; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/p5@1.9.0/lib/p5.min.js"></script>
+</head>
+<body>
+<script>
+// ============================================================
+//  ПРОЦЕДУРНАЯ ГЕНЕРАТИВНАЯ АНИМАЦИЯ — НОЧНЫЕ АКВАРИУМЫ
+//  Шум Перлина, параметрические кривые, потоковые поля,
+//  рекурсивные L-системы, процедурные HSB-палитры
+// ============================================================
+
+let SEED = 42;
+let aquariums = [];
+let stars = [];
+let moon = {};
+let time = 0;
+
+// ===== HSB → RGB конвертер =====
+function hsb(h, s, b, a) {
+  // h: 0-360, s: 0-100, b: 0-100, a: 0-1
+  h = ((h % 360) + 360) % 360;
+  s = constrain(s, 0, 100) / 100;
+  b = constrain(b, 0, 100) / 100;
+  a = a === undefined ? 1 : constrain(a, 0, 1);
+
+  let c = b * s;
+  let x = c * (1 - Math.abs((h / 60) % 2 - 1));
+  let m = b - c;
+  let r, g, bl;
+  if (h < 60) { r = c; g = x; bl = 0; }
+  else if (h < 120) { r = x; g = c; bl = 0; }
+  else if (h < 180) { r = 0; g = c; bl = x; }
+  else if (h < 240) { r = 0; g = x; bl = c; }
+  else if (h < 300) { r = x; g = 0; bl = c; }
+  else { r = c; g = 0; bl = x; }
+
+  return [
+    Math.round((r + m) * 255),
+    Math.round((g + m) * 255),
+    Math.round((bl + m) * 255),
+    a
+  ];
+}
+
+function hsbCSS(h, s, b, a) {
+  let c = hsb(h, s, b, a);
+  return `rgba(${c[0]},${c[1]},${c[2]},${c[3]})`;
+}
+
+// ===== ПРОЦЕДУРНАЯ ПАЛИТРА =====
+function generatePalette(seed) {
+  randomSeed(seed);
+  let baseHue = random(360);
+  let palette = [];
+  let n = 8 + floor(random(4));
+  for (let i = 0; i < n; i++) {
+    let h = (baseHue + i * random(20, 50) + random(-10, 10)) % 360;
+    let s = random(40, 70);
+    let b = random(70, 95);
+    palette.push([h, s, b]);
+  }
+  return palette;
+}
+
+// ===== ПРОЦЕДУРНАЯ РЫБА: параметры =====
+function generateFishParams(seed, palette) {
+  randomSeed(seed);
+  let col = palette[floor(random(palette.length))];
+  return {
+    col,
+    bodyA: random(0.8, 2.0),
+    bodyB: random(0.4, 1.0),
+    waveCount: floor(random(2, 6)),
+    waveAmp: random(0.05, 0.25),
+    tailType: floor(random(4)),
+    finStyle: floor(random(3)),
+    eyeSize: random(0.08, 0.18),
+    stripeCount: floor(random(0, 4)),
+    glowIntensity: random(0.3, 0.9),
+    size: random(5, 14),
+    speed: random(0.6, 2.5),
+    tailFreq: random(0.15, 0.4),
+    bodyPoints: 24
+  };
+}
+
+// ===== РИСОВАНИЕ РЫБЫ: параметрический контур =====
+function drawProceduralFish(fish, t, phase) {
+  let s = fish.params.size;
+  let p = fish.params;
+  let col = p.col;
+  let cRGB = hsb(col[0], col[1], col[2]);
+  let tailWag = sin(phase) * 0.35;
+
+  push();
+  noStroke();
+
+  // Биолюминесцентное свечение
+  let glowPulse = 0.6 + sin(phase * 0.4) * 0.4;
+  drawingContext.shadowBlur = s * p.glowIntensity * glowPulse;
+  drawingContext.shadowColor = hsbCSS(col[0], col[1], col[2], 0.5);
+
+  // ТЕЛО: параметрический контур
+  // x(θ) = s * bodyA * cos(θ)
+  // y(θ) = s * bodyB * sin(θ) * (1 + waveAmp * sin(waveCount * θ))
+  fill(cRGB[0], cRGB[1], cRGB[2], 210);
+  beginShape();
+  for (let i = 0; i <= p.bodyPoints; i++) {
+    let theta = map(i, 0, p.bodyPoints, 0, TWO_PI);
+    let x = s * p.bodyA * cos(theta);
+    let y = s * p.bodyB * sin(theta) * (1 + p.waveAmp * sin(p.waveCount * theta + phase * 0.1));
+    vertex(x, y);
+  }
+  endShape(CLOSE);
+
+  // ХВОСТ
+  push();
+  translate(-s * p.bodyA * 0.8, 0);
+  rotate(tailWag);
+  fill(cRGB[0], cRGB[1], cRGB[2], 180);
+
+  if (p.tailType === 0) {
+    // Веерный
+    beginShape();
+    for (let i = 0; i <= 8; i++) {
+      let a = map(i, 0, 8, -PI * 0.4, PI * 0.4);
+      let r = s * 0.6 + sin(a * 3) * s * 0.1;
+      vertex(cos(a + PI) * r, sin(a + PI) * r);
+    }
+    endShape(CLOSE);
+  } else if (p.tailType === 1) {
+    // Раздвоенный
+    triangle(0, 0, -s * 0.5, -s * 0.5, -s * 0.3, -s * 0.15);
+    triangle(0, 0, -s * 0.5, s * 0.5, -s * 0.3, s * 0.15);
+  } else if (p.tailType === 2) {
+    // Ленточный
+    beginShape();
+    for (let i = 0; i <= 12; i++) {
+      let r = i / 12;
+      let tx = -r * s * 0.8;
+      let ty = sin(r * 4 + phase * 0.5) * s * 0.15 * r;
+      let w = s * 0.25 * (1 - r * 0.7);
+      vertex(tx, ty - w);
+    }
+    for (let i = 12; i >= 0; i--) {
+      let r = i / 12;
+      let tx = -r * s * 0.8;
+      let ty = sin(r * 4 + phase * 0.5) * s * 0.15 * r;
+      let w = s * 0.25 * (1 - r * 0.7);
+      vertex(tx, ty + w);
+    }
+    endShape(CLOSE);
+  } else {
+    ellipse(-s * 0.4, 0, s * 0.5, s * 0.4);
+  }
+  pop();
+
+  // ПЛАВНИКИ
+  fill(cRGB[0], cRGB[1], cRGB[2], 140);
+  if (p.finStyle === 0) {
+    beginShape();
+    vertex(-s * 0.2, -s * p.bodyB * 0.8);
+    vertex(s * 0.1, -s * p.bodyB * 1.5);
+    vertex(s * 0.3, -s * p.bodyB * 0.8);
+    endShape(CLOSE);
+    beginShape();
+    vertex(-s * 0.2, s * p.bodyB * 0.8);
+    vertex(s * 0.1, s * p.bodyB * 1.4);
+    vertex(s * 0.3, s * p.bodyB * 0.8);
+    endShape(CLOSE);
+  } else if (p.finStyle === 1) {
+    beginShape();
+    for (let i = 0; i <= 10; i++) {
+      let r = i / 10;
+      let fx = lerp(-s * 0.3, s * 0.4, r);
+      let fy = -s * p.bodyB * 0.8 - sin(r * PI) * s * 0.5;
+      vertex(fx, fy);
+    }
+    for (let i = 10; i >= 0; i--) {
+      let r = i / 10;
+      let fx = lerp(-s * 0.3, s * 0.4, r);
+      vertex(fx, -s * p.bodyB * 0.8);
+    }
+    endShape(CLOSE);
+  } else {
+    for (let i = 0; i < 5; i++) {
+      let a = map(i, 0, 4, -0.4, 0.4);
+      push();
+      translate(s * 0.1, -s * p.bodyB * 0.8);
+      rotate(a);
+      triangle(0, 0, -s * 0.1, -s * 0.5, s * 0.1, -s * 0.5);
+      pop();
+    }
+  }
+
+  // ПОЛОСКИ
+  if (p.stripeCount > 0) {
+    fill(cRGB[0] * 0.6, cRGB[1] * 0.6, cRGB[2] * 0.6, 100);
+    for (let i = 0; i < p.stripeCount; i++) {
+      let sx = map(i, 0, p.stripeCount - 1, -s * 0.4, s * 0.3);
+      ellipse(sx, 0, s * 0.08, s * p.bodyB * 1.6);
+    }
+  }
+
+  // ГЛАЗ
+  let eyeX = s * p.bodyA * 0.5;
+  let eyeY = -s * p.bodyB * 0.2;
+  let eyeR = s * p.eyeSize;
+  fill(255, 255, 255, 200);
+  circle(eyeX, eyeY, eyeR * 2);
+  fill(20, 20, 40, 220);
+  circle(eyeX + eyeR * 0.2, eyeY, eyeR);
+  fill(255, 255, 255, 180);
+  circle(eyeX + eyeR * 0.4, eyeY - eyeR * 0.3, eyeR * 0.4);
+
+  // БЛИК
+  fill(255, 255, 255, 30);
+  ellipse(0, -s * p.bodyB * 0.4, s * p.bodyA * 0.8, s * p.bodyB * 0.3);
+
+  drawingContext.shadowBlur = 0;
+  pop();
+}
+
+// ===== ПРОЦЕДУРНАЯ ВОДОРОСЛЬ: рекурсивная L-система =====
+function drawProceduralPlant(x, baseY, height, depth, col, t, phase) {
+  if (depth <= 0 || height < 4) return;
+
+  let sway = sin(t * 0.0005 + phase) * height * 0.02;
+  let endX = x + sway;
+  let endY = baseY - height;
+  let w = map(depth, 0, 4, 1.5, 5);
+  let cRGB = hsb(col[0], col[1], col[2]);
+
+  if (depth <= 1) {
+    drawingContext.shadowBlur = 12;
+    drawingContext.shadowColor = hsbCSS(col[0], col[1], col[2], 0.7);
+  }
+
+  stroke(cRGB[0], cRGB[1], cRGB[2], 130 + depth * 25);
+  strokeWeight(w);
+  strokeCap(ROUND);
+  noFill();
+
+  beginShape();
+  let segs = 12;
+  for (let i = 0; i <= segs; i++) {
+    let r = i / segs;
+    let px = lerp(x, endX, r) + noise(x * 0.01, r * 3 + t * 0.0003, phase) * 2 - 1;
+    let py = lerp(baseY, endY, r);
+    vertex(px, py);
+  }
+  endShape();
+
+  if (depth > 1) {
+    let branches = floor(random(2, 4));
+    for (let i = 0; i < branches; i++) {
+      let r = random(0.3, 0.8);
+      let bx = lerp(x, endX, r) + noise(x * 0.01, r * 3 + t * 0.0003, phase) * 2 - 1;
+      let by = lerp(baseY, endY, r);
+      let dir = random() > 0.5 ? 1 : -1;
+      drawProceduralPlant(bx + dir * 5, by, height * random(0.4, 0.7), depth - 1, col, t, phase + i);
+    }
+  }
+
+  if (depth <= 1) {
+    noStroke();
+    let tipRGB = hsb(col[0], col[1], min(col[2] + 20, 100));
+    fill(tipRGB[0], tipRGB[1], tipRGB[2], 180);
+    circle(endX, endY, w * 2);
+    drawingContext.shadowBlur = 0;
+  }
+}
+
+// ===== ПУЗЫРЁК =====
+class ProceduralBubble {
+  constructor(x, y, size, speed, hue, bounds) {
+    this.x = x; this.y = y; this.size = size; this.speed = speed;
+    this.hue = hue; this.bounds = bounds;
+    this.wobble = random(TWO_PI);
+    this.wobbleSpeed = random(0.02, 0.06);
+    this.wobbleAmp = random(3, 12);
+  }
+  update() {
+    this.y -= this.speed;
+    this.wobble += this.wobbleSpeed;
+    if (this.y < this.bounds.top - this.size) {
+      this.y = this.bounds.bottom - random(5, 30);
+      this.x = this.bounds.left + random(10, this.bounds.right - this.bounds.left - 10);
+    }
+  }
+  draw() {
+    let wx = this.x + sin(this.wobble) * this.wobbleAmp;
+    push();
+    noStroke();
+    drawingContext.shadowBlur = this.size * 0.8;
+    drawingContext.shadowColor = hsbCSS(this.hue, 50, 90, 0.4);
+    fill(255, 255, 255, 65);
+    circle(wx, this.y, this.size);
+    fill(255, 255, 255, 90);
+    circle(wx - this.size * 0.2, this.y - this.size * 0.2, this.size * 0.3);
+    drawingContext.shadowBlur = 0;
+    noFill();
+    stroke(255, 255, 255, 40);
+    strokeWeight(0.6);
+    circle(wx, this.y, this.size);
+    pop();
+  }
+}
+
+// ===== БИОЛЮМИНЕСЦЕНТНАЯ ЧАСТИЦА (потоковое поле) =====
+class GlowParticle {
+  constructor(x, y, col, bounds) {
+    this.x = x; this.y = y; this.col = col; this.bounds = bounds;
+    this.size = random(1, 3.5);
+    this.phase = random(TWO_PI);
+    this.pulseSpeed = random(0.02, 0.06);
+    this.life = random(150, 500);
+    this.maxLife = this.life;
+    this.noiseOffsetX = random(1000);
+    this.noiseOffsetY = random(2000);
+  }
+  update(t) {
+    let nx = noise(this.noiseOffsetX + t * 0.002, this.y * 0.005);
+    let ny = noise(this.noiseOffsetY + t * 0.002, this.x * 0.005);
+    let angle = map(nx, 0, 1, -PI, PI);
+    let speed = map(ny, 0, 1, 0.2, 0.8);
+    this.x += cos(angle) * speed;
+    this.y += sin(angle) * speed - 0.15;
+    this.phase += this.pulseSpeed;
+    this.life--;
+    if (this.y < this.bounds.top || this.life <= 0) {
+      this.y = this.bounds.bottom - random(5, 30);
+      this.x = this.bounds.left + random(5, this.bounds.right - this.bounds.left - 5);
+      this.life = this.maxLife;
+    }
+    if (this.x < this.bounds.left) this.x = this.bounds.right;
+    if (this.x > this.bounds.right) this.x = this.bounds.left;
+  }
+  draw() {
+    let pulse = 0.4 + sin(this.phase) * 0.6;
+    let alpha = (this.life / this.maxLife) * 140 * pulse;
+    push();
+    noStroke();
+    drawingContext.shadowBlur = 14;
+    drawingContext.shadowColor = hsbCSS(this.col[0], this.col[1], this.col[2], 0.9);
+    let c = hsb(this.col[0], this.col[1], this.col[2], alpha / 255);
+    fill(c[0], c[1], c[2], c[3] * 255);
+    circle(this.x, this.y, this.size * (0.7 + pulse * 0.6));
+    drawingContext.shadowBlur = 0;
+    pop();
+  }
+}
+
+// ===== РЫБА (движение через шум Перлина) =====
+class ProceduralFish {
+  constructor(params, bounds, aquarium) {
+    this.params = params;
+    this.bounds = bounds;
+    this.aquarium = aquarium;
+    this.x = bounds.left + random(20, bounds.right - bounds.left - 20);
+    this.y = bounds.top + random(20, bounds.bottom - bounds.top - 20);
+    this.angle = random(TWO_PI);
+    this.tailPhase = random(TWO_PI);
+    this.noiseOffsetX = random(1000);
+    this.noiseOffsetY = random(2000);
+    this.bobPhase = random(TWO_PI);
+  }
+  update(t) {
+    this.tailPhase += this.params.tailFreq;
+    let n = noise(this.noiseOffsetX + t * 0.002, this.noiseOffsetY);
+    let targetAngle = map(n, 0, 1, 0, TWO_PI);
+    let m = this.params.size * 1.8;
+
+    // Динамиеские границы по Y позиции
+    let dynBounds = this.aquarium ? this.aquarium.getBoundsAtY(this.y) : this.bounds;
+    let dLeft = dynBounds.left + m;
+    let dRight = dynBounds.right - m;
+
+    if (this.x < dLeft) targetAngle = random(-PI/3, PI/3);
+    if (this.x > dRight) targetAngle = random(PI*2/3, PI*4/3);
+    if (this.y < this.bounds.top + m) targetAngle = random(PI/6, PI*5/6);
+    if (this.y > this.bounds.bottom - m) targetAngle = random(PI+PI/6, PI+PI*5/6);
+
+    let diff = targetAngle - this.angle;
+    while (diff > PI) diff -= TWO_PI;
+    while (diff < -PI) diff += TWO_PI;
+    this.angle += diff * 0.08;
+    let speed = this.params.speed * 1.4;
+    this.x += cos(this.angle) * speed;
+    this.y += sin(this.angle) * speed + sin(this.bobPhase) * 0.6;
+    this.bobPhase += 0.05;
+
+    // Жёсткие ограничения с учётом формы
+    let cb = this.aquarium ? this.aquarium.getBoundsAtY(this.y) : this.bounds;
+    if (this.x < cb.left + m) { this.x = cb.left + m; this.angle = random(-PI/3, PI/3); }
+    if (this.x > cb.right - m) { this.x = cb.right - m; this.angle = random(PI*2/3, PI*4/3); }
+    if (this.y < this.bounds.top + m) { this.y = this.bounds.top + m; this.angle = random(PI/6, PI*5/6); }
+    if (this.y > this.bounds.bottom - m) { this.y = this.bounds.bottom - m; this.angle = random(PI+PI/6, PI+PI*5/6); }
+  }
+  draw(t) {
+    push();
+    translate(this.x, this.y);
+    let flip = cos(this.angle) < 0 ? -1 : 1;
+    scale(flip, 1);
+    let bodyAngle = flip < 0 ? PI - this.angle : this.angle;
+    rotate(bodyAngle);
+    drawProceduralFish(this, t, this.tailPhase);
+    pop();
+  }
+}
+
+// ===== АКВАРИУМ =====
+class ProceduralAquarium {
+  constructor(x, y, w, h, index, palette, shapeType) {
+    this.x = x; this.y = y; this.w = w; this.h = h;
+    this.index = index; this.palette = palette;
+    this.shapeType = shapeType;
+    this.cornerRadius = this.shapeType === 4 ? min(w, h) / 2 : random(6, 22);
+    this.hexInset = w * random(0.08, 0.18);
+    this.trapInset = w * random(0.1, 0.25); // для трапеции
+    this.archRadius = w * random(0.3, 0.5); // для арки
+
+    let wIdx = index % palette.length;
+    this.waterHue = palette[wIdx][0];
+    this.waterSat = palette[wIdx][1] + 10;
+    this.waterBri = palette[wIdx][2];
+
+    this.bounds = { left: x + 14, right: x + w - 14, top: y + 22, bottom: y + h - 18 };
+    this.fish = []; this.plants = []; this.bubbles = []; this.particles = []; this.lightRays = [];
+    this.time = 0;
+    this.generate();
+  }
+
+  generate() {
+    randomSeed(SEED + this.index * 1000);
+    noiseSeed(SEED + this.index * 1000);
+
+    // Растения
+    let plantCount = 3 + floor(random(4));
+    for (let i = 0; i < plantCount; i++) {
+      this.plants.push({
+        x: this.x + 18 + random(this.w - 36),
+        baseY: this.y + this.h - 16,
+        height: random(30, this.h * 0.55),
+        depth: 2 + floor(random(3)),
+        col: [(this.waterHue + random(-30, 30) + 120) % 360, random(40, 70), random(50, 80)],
+        phase: random(TWO_PI)
+      });
+    }
+
+    // Рыбы
+    let fishCount = 3 + floor(random(3));
+    for (let i = 0; i < fishCount; i++) {
+      let params = generateFishParams(SEED + this.index * 1000 + i * 137, this.palette);
+      this.fish.push(new ProceduralFish(params, this.bounds, this));
+    }
+    // Стайка
+    let schoolParams = generateFishParams(SEED + this.index * 9999, this.palette);
+    schoolParams.size = random(4, 7);
+    schoolParams.speed = random(0.6, 1.2);
+    for (let i = 0; i < 2 + floor(random(2)); i++) {
+      let f = new ProceduralFish({ ...schoolParams }, this.bounds, this);
+      f.x += random(-20, 20); f.y += random(-15, 15);
+      this.fish.push(f);
+    }
+
+    // Пузырьки
+    for (let i = 0; i < 15 + floor(random(12)); i++) {
+      this.bubbles.push(new ProceduralBubble(
+        this.x + 15 + random(this.w - 30),
+        this.y + this.h - 16 - random(this.h - 35),
+        random(2, 14), random(0.2, 1.2), this.waterHue, this.bounds
+      ));
+    }
+
+    // Частицы
+    for (let i = 0; i < 12 + floor(random(8)); i++) {
+      this.particles.push(new GlowParticle(
+        this.bounds.left + random(10, this.w - 20),
+        this.bounds.top + random(10, this.h - 30),
+        this.palette[(this.index * 3 + i) % this.palette.length],
+        this.bounds
+      ));
+    }
+
+    // Лучи
+    for (let i = 0; i < 2 + floor(random(2)); i++) {
+      this.lightRays.push({
+        x: this.x + random(this.w * 0.15, this.w * 0.85),
+        width: random(20, 55), phase: random(TWO_PI),
+        speed: random(0.005, 0.015), alpha: random(8, 22)
+      });
+    }
+  }
+
+  // Динамиеские границы в зависимости от Y — учитывают форму аквариума
+  getBoundsAtY(py) {
+    let left = this.bounds.left;
+    let right = this.bounds.right;
+    let top = this.bounds.top;
+    let bottom = this.bounds.bottom;
+    let w = this.w;
+    let cx = this.x + w / 2;
+    // Запас чтобы рыбы не прилипали к стеклу
+    let pad = 4;
+
+    if (this.shapeType === 3) {
+      // Шестиугольник: сужается к верху и низу
+      let mid = (top + bottom) / 2;
+      let halfRange = (bottom - top) / 2;
+      let dist = Math.abs(py - mid) / halfRange;
+      let inset = this.hexInset * dist + pad;
+      left = this.x + 14 + inset;
+      right = this.x + w - 14 - inset;
+    } else if (this.shapeType === 4) {
+      // Овал: эллиптические границы
+      let mid = (top + bottom) / 2;
+      let halfH = (bottom - top) / 2;
+      let dist = (py - mid) / halfH;
+      if (Math.abs(dist) >= 0.95) return { left: cx, right: cx };
+      let halfW = (right - left) / 2 - pad;
+      let chord = halfW * Math.sqrt(1 - dist * dist);
+      left = cx - chord;
+      right = cx + chord;
+    } else if (this.shapeType === 5) {
+      // Трапеция: шире снизу
+      let t = (py - top) / (bottom - top);
+      t = constrain(t, 0, 1);
+      let topInset = this.trapInset;
+      let curInset = topInset * (1 - t) + pad;
+      left = this.x + 14 + curInset;
+      right = this.x + w - 14 - curInset;
+    } else if (this.shapeType === 6) {
+      // Пятиугольник: точка сверху, расширяется к 35%, потом прямые стороны
+      let peakY = top;
+      let shoulderY = top + (bottom - top) * 0.35;
+      let shoulderInset = w * 0.2;
+      if (py <= shoulderY) {
+        let t = (py - peakY) / (shoulderY - peakY);
+        t = constrain(t, 0, 1);
+        let halfW = (w / 2 - shoulderInset) * t;
+        left = cx - halfW + pad;
+        right = cx + halfW - pad;
+      } else {
+        let t = (py - shoulderY) / (bottom - shoulderY);
+        t = constrain(t, 0, 1);
+        let curInset = shoulderInset * t + pad;
+        left = this.x + shoulderInset + curInset;
+        right = this.x + w - shoulderInset - curInset;
+      }
+    } else if (this.shapeType === 7) {
+      // Ромб: сужается к верху и низу, widest в центре
+      let mid = (top + bottom) / 2;
+      let halfH = (bottom - top) / 2;
+      let dist = Math.abs(py - mid) / halfH; // 0 в центре, 1 на краях
+      if (dist >= 0.95) return { left: cx, right: cx };
+      let halfW = (right - left) / 2 - pad;
+      let chord = halfW * (1 - dist);
+      left = cx - chord;
+      right = cx + chord;
+    } else if (this.shapeType === 8) {
+      // Восьмиугольник: сужается к верху и низу, но мягче чем ромб
+      let mid = (top + bottom) / 2;
+      let halfH = (bottom - top) / 2;
+      let dist = Math.abs(py - mid) / halfH;
+      // Сужение только в верхней и нижней четверти
+      let taperZone = 0.6;
+      if (dist > taperZone) {
+        let taper = (dist - taperZone) / (1 - taperZone);
+        let inset = (w * 0.15) * taper + pad;
+        left = this.x + 14 + inset;
+        right = this.x + w - 14 - inset;
+      } else {
+        left = this.bounds.left + pad;
+        right = this.bounds.right - pad;
+      }
+    } else {
+      // Прямоугольник — с запасом
+      left = this.bounds.left + pad;
+      right = this.bounds.right - pad;
+    }
+    return { left, right };
+  }
+
+  clipPath() {
+    drawingContext.beginPath();
+    if (this.shapeType === 3) {
+      // Шестиугольник
+      let ins = this.hexInset;
+      drawingContext.moveTo(this.x + ins, this.y);
+      drawingContext.lineTo(this.x + this.w - ins, this.y);
+      drawingContext.lineTo(this.x + this.w, this.y + this.h / 2);
+      drawingContext.lineTo(this.x + this.w - ins, this.y + this.h);
+      drawingContext.lineTo(this.x + ins, this.y + this.h);
+      drawingContext.lineTo(this.x, this.y + this.h / 2);
+    } else if (this.shapeType === 4) {
+      // Овал
+      drawingContext.ellipse(this.x + this.w / 2, this.y + this.h / 2, this.w / 2, this.h / 2, 0, 0, TWO_PI);
+    } else if (this.shapeType === 5) {
+      // Трапеция (шире снизу)
+      let ins = this.trapInset;
+      drawingContext.moveTo(this.x + ins, this.y);
+      drawingContext.lineTo(this.x + this.w - ins, this.y);
+      drawingContext.lineTo(this.x + this.w, this.y + this.h);
+      drawingContext.lineTo(this.x, this.y + this.h);
+    } else if (this.shapeType === 6) {
+      // Пятиугольник (острая вершина сверху)
+      drawingContext.moveTo(this.x + this.w / 2, this.y);
+      drawingContext.lineTo(this.x + this.w, this.y + this.h * 0.35);
+      drawingContext.lineTo(this.x + this.w * 0.8, this.y + this.h);
+      drawingContext.lineTo(this.x + this.w * 0.2, this.y + this.h);
+      drawingContext.lineTo(this.x, this.y + this.h * 0.35);
+    } else if (this.shapeType === 7) {
+      // Ромб (острые вершины сверху и снизу)
+      drawingContext.moveTo(this.x + this.w / 2, this.y);
+      drawingContext.lineTo(this.x + this.w, this.y + this.h / 2);
+      drawingContext.lineTo(this.x + this.w / 2, this.y + this.h);
+      drawingContext.lineTo(this.x, this.y + this.h / 2);
+    } else if (this.shapeType === 8) {
+      // Восьмиугольник
+      let ins = this.w * 0.15;
+      drawingContext.moveTo(this.x + ins, this.y);
+      drawingContext.lineTo(this.x + this.w - ins, this.y);
+      drawingContext.lineTo(this.x + this.w, this.y + ins);
+      drawingContext.lineTo(this.x + this.w, this.y + this.h - ins);
+      drawingContext.lineTo(this.x + this.w - ins, this.y + this.h);
+      drawingContext.lineTo(this.x + ins, this.y + this.h);
+      drawingContext.lineTo(this.x, this.y + this.h - ins);
+      drawingContext.lineTo(this.x, this.y + ins);
+    } else {
+      // Прямоугольник со скруглением
+      drawingContext.roundRect(this.x + 2, this.y + 2, this.w - 4, this.h - 4, this.cornerRadius);
+    }
+    drawingContext.closePath();
+  }
+
+  drawShapeP5() {
+    if (this.shapeType === 3) {
+      // Шестиугольник
+      let ins = this.hexInset;
+      beginShape();
+      vertex(this.x + ins, this.y);
+      vertex(this.x + this.w - ins, this.y);
+      vertex(this.x + this.w, this.y + this.h / 2);
+      vertex(this.x + this.w - ins, this.y + this.h);
+      vertex(this.x + ins, this.y + this.h);
+      vertex(this.x, this.y + this.h / 2);
+      endShape(CLOSE);
+    } else if (this.shapeType === 4) {
+      // Овал
+      ellipse(this.x + this.w / 2, this.y + this.h / 2, this.w, this.h);
+    } else if (this.shapeType === 5) {
+      // Трапеция
+      let ins = this.trapInset;
+      beginShape();
+      vertex(this.x + ins, this.y);
+      vertex(this.x + this.w - ins, this.y);
+      vertex(this.x + this.w, this.y + this.h);
+      vertex(this.x, this.y + this.h);
+      endShape(CLOSE);
+    } else if (this.shapeType === 6) {
+      // Пятиугольник
+      beginShape();
+      vertex(this.x + this.w / 2, this.y);
+      vertex(this.x + this.w, this.y + this.h * 0.35);
+      vertex(this.x + this.w * 0.8, this.y + this.h);
+      vertex(this.x + this.w * 0.2, this.y + this.h);
+      vertex(this.x, this.y + this.h * 0.35);
+      endShape(CLOSE);
+    } else if (this.shapeType === 7) {
+      // Ромб
+      beginShape();
+      vertex(this.x + this.w / 2, this.y);
+      vertex(this.x + this.w, this.y + this.h / 2);
+      vertex(this.x + this.w / 2, this.y + this.h);
+      vertex(this.x, this.y + this.h / 2);
+      endShape(CLOSE);
+    } else if (this.shapeType === 8) {
+      // Восьмиугольник
+      let ins = this.w * 0.15;
+      beginShape();
+      vertex(this.x + ins, this.y);
+      vertex(this.x + this.w - ins, this.y);
+      vertex(this.x + this.w, this.y + ins);
+      vertex(this.x + this.w, this.y + this.h - ins);
+      vertex(this.x + this.w - ins, this.y + this.h);
+      vertex(this.x + ins, this.y + this.h);
+      vertex(this.x, this.y + this.h - ins);
+      vertex(this.x, this.y + ins);
+      endShape(CLOSE);
+    } else {
+      // Прямоугольник
+      rect(this.x, this.y, this.w, this.h, this.cornerRadius);
+    }
+  }
+
+  drawAmbientGlow() {
+    push();
+    noStroke();
+    let cx = this.x + this.w / 2;
+    let cy = this.y + this.h / 2;
+    let maxR = max(this.w, this.h) * 0.8;
+    let c = hsb(this.waterHue, this.waterSat, this.waterBri);
+    for (let i = 6; i > 0; i--) {
+      let r = maxR * (i / 6);
+      fill(c[0], c[1], c[2], 6);
+      ellipse(cx, cy, r * 2, r * 2);
+    }
+    pop();
+  }
+
+  drawGlass() {
+    push();
+    // Тень
+    noStroke();
+    fill(0, 0, 0, 50);
+    this.drawShapeP5();
+
+    // Стекло
+    let gc = hsb(this.waterHue, this.waterSat, this.waterBri + 10);
+    fill(gc[0], gc[1], gc[2], 20);
+    stroke(gc[0], gc[1], gc[2], 130);
+    strokeWeight(2.5);
+    this.drawShapeP5();
+
+    // Блики
+    noFill();
+    stroke(255, 255, 255, 70);
+    strokeWeight(3);
+    let hx1 = this.x + 8 + this.index * 3;
+    line(hx1, this.y + 15, hx1, this.y + this.h - 15);
+    stroke(255, 255, 255, 30);
+    strokeWeight(1.5);
+    let hx2 = this.x + this.w - 10 - this.index * 2;
+    line(hx2, this.y + 25, hx2, this.y + this.h - 25);
+    pop();
+  }
+
+  drawWater() {
+    push();
+    noStroke();
+
+    drawingContext.save();
+    this.clipPath();
+    drawingContext.clip();
+
+    // Процедурная вода: градиент + модуляция шумом
+    let topC = hsb(this.waterHue, this.waterSat, this.waterBri);
+    let botC = hsb(this.waterHue, this.waterSat, this.waterBri * 0.45);
+    for (let i = 0; i < this.h; i++) {
+      let r = i / this.h;
+      let noiseMod = noise(i * 0.05, this.time * 0.002, this.index) * 0.15;
+      let rr = lerp(topC[0], botC[0], r);
+      let gg = lerp(topC[1], botC[1], r);
+      let bb = lerp(topC[2], botC[2], r) + noiseMod * 30;
+      fill(rr, gg, bb, 130);
+      rect(this.x, this.y + i, this.w, 1);
+    }
+
+    // Волны — суперпозиция синусоид
+    fill(255, 255, 255, 50);
+    beginShape();
+    for (let x = this.x; x <= this.x + this.w; x += 3) {
+      let y = this.y + 9
+        + sin(x * 0.05 + this.time * 0.02) * 2.5
+        + cos(x * 0.08 + this.time * 0.015) * 1.5
+        + sin(x * 0.03 + this.time * 0.01) * 1;
+      vertex(x, y);
+    }
+    vertex(this.x + this.w, this.y);
+    vertex(this.x, this.y);
+    endShape(CLOSE);
+
+    drawingContext.restore();
+    pop();
+  }
+
+  drawLightRays() {
+    push();
+    noStroke();
+    drawingContext.save();
+    this.clipPath();
+    drawingContext.clip();
+
+    for (let ray of this.lightRays) {
+      let sway = sin(this.time * ray.speed + ray.phase) * 18;
+      let rx = ray.x + sway;
+      let grad = drawingContext.createLinearGradient(rx, this.y, rx, this.y + this.h);
+      grad.addColorStop(0, `rgba(255,255,255,${ray.alpha * 0.01})`);
+      grad.addColorStop(0.3, `rgba(255,255,255,${ray.alpha * 0.006})`);
+      grad.addColorStop(1, 'rgba(255,255,255,0)');
+      drawingContext.fillStyle = grad;
+      drawingContext.beginPath();
+      drawingContext.moveTo(rx - ray.width / 2, this.y);
+      drawingContext.lineTo(rx + ray.width / 2, this.y);
+      drawingContext.lineTo(rx + ray.width * 0.3, this.y + this.h);
+      drawingContext.lineTo(rx - ray.width * 0.3, this.y + this.h);
+      drawingContext.closePath();
+      drawingContext.fill();
+    }
+    drawingContext.restore();
+    pop();
+  }
+
+  drawSand() {
+    push();
+    noStroke();
+    let sandC = hsb(this.waterHue, 20, this.waterBri * 0.4);
+    fill(sandC[0], sandC[1], sandC[2], 190);
+    beginShape();
+    vertex(this.x + 3, this.y + this.h - 4);
+    for (let x = this.x + 3; x <= this.x + this.w - 3; x += 5) {
+      let y = this.y + this.h - 14 - noise(x * 0.02, this.index * 5, this.time * 0.001) * 12;
+      vertex(x, y);
+    }
+    vertex(this.x + this.w - 3, this.y + this.h - 4);
+    endShape(CLOSE);
+
+    for (let i = 0; i < 7; i++) {
+      let cx = this.x + 12 + (i * (this.w - 24) / 6) + noise(i * 10, this.index) * 8 - 4;
+      let cy = this.y + this.h - 9;
+      let cs = 3 + noise(i * 5, this.index + 100) * 6;
+      fill(sandC[0] * 0.85, sandC[1] * 0.85, sandC[2] * 0.85, 210);
+      ellipse(cx, cy, cs, cs * 0.7);
+    }
+    pop();
+  }
+
+  update(t) {
+    this.time += 1;
+    for (let f of this.fish) f.update(t);
+    for (let b of this.bubbles) b.update();
+    for (let p of this.particles) p.update(t);
+  }
+
+  draw(t) {
+    this.drawAmbientGlow();
+    this.drawGlass();
+    this.drawWater();
+    this.drawLightRays();
+    this.drawSand();
+
+    for (let p of this.plants) drawProceduralPlant(p.x, p.baseY, p.height, p.depth, p.col, t, p.phase);
+    for (let p of this.particles) p.draw();
+    for (let b of this.bubbles) b.draw();
+    for (let f of this.fish) f.draw(t);
+
+    // Переднее свечение
+    push();
+    noStroke();
+    drawingContext.save();
+    this.clipPath();
+    drawingContext.clip();
+    fill(255, 255, 255, 6);
+    rect(this.x, this.y, this.w, this.h);
+    drawingContext.restore();
+    pop();
+  }
+}
+
+// ===== ЗВЕЗДЫ =====
+class Star {
+  constructor() {
+    this.x = random(width);
+    this.y = random(height * 0.55);
+    this.size = random(0.5, 2.8);
+    this.twinkleSpeed = random(0.01, 0.04);
+    this.phase = random(TWO_PI);
+    this.baseAlpha = random(80, 220);
+    this.hue = random(360);
+  }
+  draw() {
+    let alpha = this.baseAlpha + sin(this.phase) * 70;
+    push();
+    noStroke();
+    drawingContext.shadowBlur = 10;
+    drawingContext.shadowColor = hsbCSS(this.hue, 50, 90, 0.7);
+    let c = hsb(this.hue, 40, 95, alpha / 255);
+    fill(c[0], c[1], c[2], c[3] * 255);
+    circle(this.x, this.y, this.size);
+    drawingContext.shadowBlur = 0;
+    pop();
+    this.phase += this.twinkleSpeed;
+  }
+}
+
+// ===== SETUP =====
+function setup() {
+  let cnv = createCanvas(windowWidth, windowHeight);
+  cnv.parent(document.body);
+  initScene();
+}
+
+function initScene() {
+  SEED = floor(random(100000));
+  noiseSeed(SEED);
+  randomSeed(SEED);
+
+  stars = [];
+  for (let i = 0; i < 150; i++) stars.push(new Star());
+
+  moon = {
+    x: width * 0.85, y: height * 0.12,
+    size: random(45, 70), glowSize: random(150, 220),
+    hue: random(200, 260)
+  };
+
+  let palette = generatePalette(SEED);
+
+  aquariums = [];
+  let padding = 16;
+  let availableW = width - padding * 2;
+  let n = 5;
+
+  // Общая плоскость (пол) — все аквариумы стоят на одном уровне
+  let floorY = height * 0.82;
+  let maxH = floorY - 40;
+
+  // Процедурные ширины и высоты через шум
+  let wMult = [], hMult = [];
+  for (let i = 0; i < n; i++) {
+    wMult.push(0.6 + noise(i * 0.5, SEED * 0.01) * 0.8);
+    hMult.push(0.45 + noise(i * 0.5 + 10, SEED * 0.01) * 0.55);
+  }
+  let totalW = wMult.reduce((a, b) => a + b, 0);
+  let slotW = availableW / totalW;
+  let baseH = min(maxH, 360);
+
+  // Распределяем уникальные формы — перемешиваем 9 типов и берём первые n
+  let allShapes = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+  // Fisher-Yates shuffle
+  for (let i = allShapes.length - 1; i > 0; i--) {
+    let j = floor(random(i + 1));
+    [allShapes[i], allShapes[j]] = [allShapes[j], allShapes[i]];
+  }
+
+  let cx = padding;
+  for (let i = 0; i < n; i++) {
+    let aw = slotW * wMult[i] - padding;
+    let ah = baseH * hMult[i];
+    if (ah > maxH) ah = maxH;
+    // Все стоят на одном полу: y = floorY - высота
+    let ay = floorY - ah;
+    aquariums.push(new ProceduralAquarium(cx, ay, aw, ah, i, palette, allShapes[i]));
+    cx += aw + padding;
+  }
+  // Сохраняем Y пола для отрисовки
+  window._floorY = floorY;
+}
+
+// ===== DRAW =====
+function draw() {
+  time += 1;
+  background(5, 8, 15);
+
+  // Градиентный фон
+  push();
+  noStroke();
+  for (let i = 0; i < height; i += 4) {
+    let r = i / height;
+    fill(8 + r * 6, 6 + r * 10, 18 + r * 15);
+    rect(0, i, width, 4);
+  }
+  pop();
+
+  for (let s of stars) s.draw();
+
+  // Луна
+  push();
+  noStroke();
+  for (let i = 6; i > 0; i--) {
+    fill(200, 210, 250, 8);
+    circle(moon.x, moon.y, moon.glowSize * (i / 6));
+  }
+  drawingContext.shadowBlur = 45;
+  drawingContext.shadowColor = hsbCSS(moon.hue, 25, 95, 0.5);
+  let mc = hsb(moon.hue, 15, 96);
+  fill(mc[0], mc[1], mc[2], 220);
+  circle(moon.x, moon.y, moon.size);
+  drawingContext.shadowBlur = 0;
+  fill(180, 180, 200, 60);
+  circle(moon.x - 12, moon.y - 8, 14);
+  circle(moon.x + 10, moon.y + 5, 10);
+  circle(moon.x - 5, moon.y + 15, 8);
+  pop();
+
+  // Лунный свет
+  push();
+  noStroke();
+  for (let i = 0; i < 100; i++) {
+    fill(200, 210, 255, 1.5);
+    rect(0, i, width, 1);
+  }
+  pop();
+
+  for (let aq of aquariums) {
+    aq.update(time);
+    aq.draw(time);
+  }
+
+  // Пол/плоскость, на которой стоят аквариумы
+  if (window._floorY) {
+    push();
+    noStroke();
+    // Тонкая линия поверхности
+    fill(255, 255, 255, 15);
+    rect(0, window._floorY, width, 2);
+    // Тени под аквариумами
+    for (let aq of aquariums) {
+      fill(0, 0, 0, 40);
+      ellipse(aq.x + aq.w / 2, window._floorY + 3, aq.w * 0.7, 6);
+    }
+    // Отражение на полу
+    fill(200, 210, 250, 4);
+    rect(0, window._floorY, width, height - window._floorY);
+    pop();
+  }
+}
+
+function windowResized() {
+  resizeCanvas(windowWidth, windowHeight);
+  initScene();
+}
+
+// Перегенерация по клику
+function mousePressed() {
+  initScene();
+}
+</script>
+<script data-pplx-inline-edit>
+(function () {
+  if (window === window.top) return;
+
+  const allowedParentOrigins = ["https://www.perplexity.ai","https://perplexity.ai","https://testing.perplexity.ai","https://staging.perplexity.ai","https://*.preview.i.perplexity.ai","http://perplexity.localhost","http://localhost:1420","http://127.0.0.1:1420","http://localhost:3000","http://127.0.0.1:3000","http://localhost:5173","http://127.0.0.1:5173"];
+  const MAX_FONT_BYTES = 500 * 1024;
+  const MAX_TOTAL_FONT_BYTES = 2 * 1024 * 1024;
+  let scrollForwarding = false;
+  let scrollRaf = 0;
+  let trustedTopOrigin = null;
+
+  // Allow entries like "https://*.preview.i.perplexity.ai" — the wildcard
+  // matches a single DNS label (no dots), so "https://*.foo" cannot stretch
+  // across multiple labels.
+  function matchesAllowedOrigin(origin) {
+    if (!origin) return false;
+    for (const entry of allowedParentOrigins) {
+      if (!entry.includes("*")) {
+        if (entry === origin) return true;
+        continue;
+      }
+      const pattern = new RegExp(
+        "^" +
+          entry.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^.]+") +
+          "$",
+      );
+      if (pattern.test(origin)) return true;
+    }
+    return false;
+  }
+
+  // Trust decision: when the sender is same-origin-visible (event.origin is a
+  // real origin like https://www.perplexity.ai) we trust event.origin directly.
+  // When event.origin is "null" (opaque broker srcdoc), we fall back to the
+  // broker's stamped `parentOrigin` to identify the top window. The fallback
+  // is claim-only — we rely on the browser's native `targetOrigin` enforcement
+  // on the response path (see postToTrustedTop) to ensure replies can't be
+  // delivered to anyone but the actual top window of that claimed origin.
+  function getTrustedParentOrigin(event) {
+    const forwardedParentOrigin =
+      typeof event.data.parentOrigin === "string" ? event.data.parentOrigin : null;
+    const parentOrigin = event.origin === "null" ? forwardedParentOrigin : event.origin;
+    return matchesAllowedOrigin(parentOrigin) ? parentOrigin : null;
+  }
+
+  // All responses go to window.top with targetOrigin = the allowlisted origin.
+  // An attacker that iframes us inside their own null-origin broker can claim
+  // any parentOrigin they like, but the browser will drop the reply whenever
+  // the real top's origin doesn't match — so the screenshot never leaves.
+  function postToTrustedTop(message) {
+    if (!trustedTopOrigin) return;
+    try {
+      window.top.postMessage(message, trustedTopOrigin);
+    } catch (_error) {}
+  }
+
+  function inlineAll(original, clone) {
+    if (original.nodeType !== 1 || clone.nodeType !== 1) return;
+
+    try {
+      const computedStyle = getComputedStyle(original);
+      // cssText on a computed style is the serialized declaration in modern
+      // Chromium/Safari — a single read beats enumerating ~400 longhand
+      // properties. Firefox returns "" here, so we fall back on empty.
+      const serialized = computedStyle.cssText;
+      if (serialized) {
+        clone.style.cssText = serialized;
+      } else {
+        const parts = new Array(computedStyle.length);
+        for (let index = 0; index < computedStyle.length; index += 1) {
+          const property = computedStyle[index];
+          parts[index] = `${property}:${computedStyle.getPropertyValue(property)};`;
+        }
+        clone.style.cssText = parts.join("");
+      }
+    } catch (_error) {}
+
+    const originalChildren = original.children;
+    const clonedChildren = clone.children;
+    for (
+      let index = 0;
+      index < originalChildren.length && index < clonedChildren.length;
+      index += 1
+    ) {
+      inlineAll(originalChildren[index], clonedChildren[index]);
+    }
+  }
+
+  function extractFontUrl(srcValue) {
+    const matches = [
+      ...srcValue.matchAll(
+        /url\(["']?([^"')]+)["']?\)(?:\s*format\(["']?([^"')]+)["']?\))?/gi,
+      ),
+    ];
+    if (matches.length === 0) return null;
+    const woff2 = matches.find((m) => m[2] && m[2].toLowerCase().includes("woff2"));
+    if (woff2) return woff2[1];
+    const woff = matches.find((m) => m[2] && m[2].toLowerCase().includes("woff"));
+    if (woff) return woff[1];
+    return matches[0][1];
+  }
+
+  // Cache resolved font URL -> data URI across captures. Fonts on a page
+  // essentially never change, and a batch run emits multiple captures back to
+  // back — without this we'd refetch + re-base64 every time.
+  const fontDataUriCache = new Map();
+  const SRC_DECLARATION_RE = /src\s*:\s*[^;}]+/i;
+
+  async function fetchAsDataUri(url) {
+    if (fontDataUriCache.has(url)) return fontDataUriCache.get(url);
+    let dataUri = null;
+    try {
+      const response = await fetch(url, { mode: "cors", credentials: "omit" });
+      if (response.ok) {
+        const blob = await response.blob();
+        if (blob.size <= MAX_FONT_BYTES) {
+          dataUri = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () =>
+              resolve(typeof reader.result === "string" ? reader.result : null);
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(blob);
+          });
+        }
+      }
+    } catch (_error) {
+      dataUri = null;
+    }
+    fontDataUriCache.set(url, dataUri);
+    return dataUri;
+  }
+
+  function collectFontFaceRuleTexts() {
+    const rules = [];
+    for (const sheet of document.styleSheets) {
+      let cssRules;
+      try {
+        cssRules = sheet.cssRules;
+      } catch (_error) {
+        continue;
+      }
+      if (!cssRules) continue;
+      for (const rule of cssRules) {
+        const cssText = rule.cssText || "";
+        if (cssText.startsWith("@font-face")) rules.push(cssText);
+      }
+    }
+    return rules;
+  }
+
+  async function buildInlinedFontCss() {
+    const ruleTexts = collectFontFaceRuleTexts();
+    if (ruleTexts.length === 0) return null;
+
+    const resolved = ruleTexts.map((cssText) => {
+      if (!SRC_DECLARATION_RE.test(cssText)) return null;
+      const srcMatch = cssText.match(/src\s*:\s*([^;}]+)[;}]/i);
+      if (!srcMatch) return null;
+      const url = extractFontUrl(srcMatch[1]);
+      if (!url) return null;
+      try {
+        return { cssText, url: new URL(url, document.baseURI).href };
+      } catch (_error) {
+        return null;
+      }
+    });
+
+    const dataUris = await Promise.all(
+      resolved.map((entry) => (entry ? fetchAsDataUri(entry.url) : Promise.resolve(null))),
+    );
+
+    const inlined = [];
+    let totalBytes = 0;
+    for (let index = 0; index < resolved.length; index += 1) {
+      const entry = resolved[index];
+      const dataUri = dataUris[index];
+      if (!entry || !dataUri) continue;
+      const approxBytes = dataUri.length * 0.75;
+      if (totalBytes + approxBytes > MAX_TOTAL_FONT_BYTES) break;
+      totalBytes += approxBytes;
+      inlined.push(entry.cssText.replace(SRC_DECLARATION_RE, `src: url("${dataUri}")`));
+    }
+    return inlined.length > 0 ? inlined.join("\n") : null;
+  }
+
+  function stripExternal(clone) {
+    const images = clone.querySelectorAll("img");
+    for (let index = 0; index < images.length; index += 1) {
+      const src = images[index].getAttribute("src");
+      if (src && !src.startsWith("data:")) images[index].removeAttribute("src");
+    }
+
+    const elements = clone.querySelectorAll("*");
+    for (let index = 0; index < elements.length; index += 1) {
+      const style = elements[index].style.cssText;
+      if (style && style.includes("url(")) {
+        elements[index].style.cssText = style.replace(
+          /url\(["']?(?!data:)[^)"']*["']?\)/gi,
+          "none",
+        );
+      }
+    }
+  }
+
+  function emitScroll() {
+    scrollRaf = 0;
+    if (!scrollForwarding) return;
+    postToTrustedTop({
+      type: "INLINE_EDIT_SCROLL",
+      scrollX: window.scrollX,
+      scrollY: window.scrollY,
+    });
+  }
+
+  window.addEventListener(
+    "scroll",
+    function () {
+      if (!scrollForwarding || scrollRaf) return;
+      scrollRaf = requestAnimationFrame(emitScroll);
+    },
+    { passive: true, capture: true },
+  );
+
+  async function handleCaptureRequest(event) {
+    const requestId = event.data.requestId;
+    const scrollX = window.scrollX;
+    const scrollY = window.scrollY;
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+
+    function postResult(dataUrl) {
+      postToTrustedTop({
+        type: "INLINE_EDIT_SCREENSHOT_RESULT",
+        requestId,
+        dataUrl,
+        scrollX,
+        scrollY,
+      });
+    }
+
+    try {
+      // Wait for any pending web fonts to resolve so both inline metrics and
+      // the @font-face inlining below see the same loaded faces.
+      if (document.fonts && document.fonts.ready) {
+        try {
+          await document.fonts.ready;
+        } catch (_error) {}
+      }
+
+      const clone = document.documentElement.cloneNode(true);
+      inlineAll(document.documentElement, clone);
+
+      const removedNodes = clone.querySelectorAll("script,link[rel=\"stylesheet\"],style");
+      for (let index = 0; index < removedNodes.length; index += 1) {
+        removedNodes[index].remove();
+      }
+
+      stripExternal(clone);
+
+      // Re-embed web fonts as data-URI @font-face rules so the SVG rasterizer
+      // can resolve them — external font URLs aren't fetched during
+      // foreignObject rendering, which would otherwise force a fallback face
+      // and change text metrics.
+      const inlinedFontCss = await buildInlinedFontCss();
+      if (inlinedFontCss) {
+        const styleEl = document.createElement("style");
+        styleEl.textContent = inlinedFontCss;
+        const head = clone.querySelector("head");
+        if (head) head.appendChild(styleEl);
+        else clone.insertBefore(styleEl, clone.firstChild);
+      }
+
+      const html = new XMLSerializer().serializeToString(clone);
+      const svg =
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">` +
+        '<foreignObject width="100%" height="100%">' +
+        `<div xmlns="http://www.w3.org/1999/xhtml" style="width:${width}px;height:${height}px;overflow:hidden">` +
+        `<div style="position:relative;left:-${scrollX}px;top:-${scrollY}px">` +
+        html +
+        "</div></div></foreignObject></svg>";
+      const svgUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+      const image = new Image();
+      image.onload = function () {
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext("2d").drawImage(image, 0, 0);
+        postResult(canvas.toDataURL("image/png"));
+      };
+      image.onerror = function () {
+        postResult(null);
+      };
+      image.src = svgUrl;
+    } catch (_error) {
+      postResult(null);
+    }
+  }
+
+  window.addEventListener("message", function (event) {
+    if (!event.data) return;
+    // Only accept messages from the direct parent frame. Blocks sibling /
+    // unrelated-window postMessage senders that could otherwise reach us.
+    if (event.source !== window.parent) return;
+
+    const trustedParentOrigin = getTrustedParentOrigin(event);
+    if (!trustedParentOrigin) return;
+    trustedTopOrigin = trustedParentOrigin;
+
+    if (event.data.type === "INLINE_EDIT_SCROLL_START") {
+      scrollForwarding = true;
+      emitScroll();
+      return;
+    }
+
+    if (event.data.type === "INLINE_EDIT_SCROLL_STOP") {
+      scrollForwarding = false;
+      if (scrollRaf) cancelAnimationFrame(scrollRaf);
+      scrollRaf = 0;
+      return;
+    }
+
+    if (event.data.type !== "INLINE_EDIT_CAPTURE_REQUEST") return;
+
+    handleCaptureRequest(event);
+  });
+})();
+
+
+</script></body>
+</html>
